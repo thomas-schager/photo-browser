@@ -8,6 +8,8 @@ A self-hosted photo and video browser for **Synology DiskStation NAS** (DSM 7.x)
 - Lightbox for photos (keyboard navigation, arrow keys / Escape)
 - Video playback with auto-play and Space bar toggle
 - Audio playback with waveform display
+- **Metadata panel** — tap ⓘ or swipe up (mobile) to view EXIF / video details grouped like Google Photos: date & time, camera, file info, GPS location
+- **Folder preview pin** — set any photo or video as the permanent preview thumbnail for its folder
 - Thumbnail cache with three PIN-protected management options: refresh, rebuild, and delete
 - Per-folder sort order (by date or name, ascending/descending) — persisted per folder
 - EXIF-aware date sorting (reads `DateTimeOriginal` from JPEG files)
@@ -36,7 +38,7 @@ Photo_Browser/
 ├── js/
 │   └── app.js
 └── api/
-    ├── index.php        ← Slim API (browse, thumbnail, media, cache, sort)
+    ├── index.php        ← Slim API (browse, thumbnail, media, metadata, cache, sort, folder/preview)
     ├── config.default.php
     ├── config.local.php ← your local overrides (gitignored)
     ├── composer.json

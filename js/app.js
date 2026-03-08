@@ -122,6 +122,12 @@ var App = {
       snacks:    [],
       snackNext: 0,
 
+      // ── Metadata panel ────────────────────────────────────────────────────
+      lbMeta:          null,   // null = not yet loaded; object = loaded
+      lbMetaLoading:   false,
+      lbMetaShow:      false,
+      lbPinningPreview: false,
+
       // ── Cache modal ───────────────────────────────────────────────────────
       cacheModal: {
         show:       false,
@@ -286,17 +292,22 @@ var App = {
       this.lbScale      = 1;
       this.lbPanX       = 0;
       this.lbPanY       = 0;
-      this.currentTime  = 0;
-      this.duration     = 0;
-      this.playing      = false;
+      this.currentTime      = 0;
+      this.duration         = 0;
+      this.playing          = false;
+      this.lbMeta           = null;
+      this.lbMetaLoading    = false;
+      this.lbMetaShow       = false;
+      this.lbPinningPreview = false;
       history.pushState(null, '', buildBrowseUrl(this.folderPath, file.name, this.page > 1 ? this.page : null));
     },
 
     closeLightbox: function(updateUrl) {
       if (updateUrl === undefined) updateUrl = true;
       this.stopMedia();
-      this.lbFile  = null;
-      this.lbIndex = -1;
+      this.lbMetaShow = false;
+      this.lbFile     = null;
+      this.lbIndex    = -1;
       if (updateUrl) history.pushState(null, '', buildBrowseUrl(this.folderPath, null, this.page > 1 ? this.page : null));
     },
 
@@ -537,7 +548,7 @@ var App = {
     // ── Lightbox swipe + pinch-zoom ───────────────────────────────────────
 
     onLbTouchStart: function(e) {
-      if (this.swipeAnimating) return;
+      if (this.lbMetaShow || this.swipeAnimating) return;
 
       if (e.touches.length === 2) {
         // Pinch start — cancel any in-progress swipe
@@ -561,7 +572,7 @@ var App = {
     },
 
     onLbTouchMove: function(e) {
-      if (this.swipeAnimating) return;
+      if (this.lbMetaShow || this.swipeAnimating) return;
 
       // ── Pinch zoom ──
       if (this._pinchActive && e.touches.length === 2) {
@@ -588,6 +599,7 @@ var App = {
 
       // ── Horizontal swipe ──
       var t2  = e.touches[0];
+      this._swipeTouchYLast = t2.clientY;   // track for swipe-up detection in touchend
       var dx  = t2.clientX - this._swipeX0;
       var dy  = t2.clientY - this._swipeY0;
       if (!this._swipeDir && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
@@ -601,6 +613,7 @@ var App = {
     },
 
     onLbTouchEnd: function() {
+      if (this.lbMetaShow) return;
       if (this._pinchActive) {
         this._pinchActive = false;
         // Snap back to 1 if barely zoomed
@@ -611,7 +624,15 @@ var App = {
       // Panning — don't trigger swipe
       if (this.lbScale > 1) return;
 
-      if (this._swipeDir !== 'h') { this.swipeDx = 0; return; }
+      if (this._swipeDir !== 'h') {
+        this.swipeDx = 0;
+        // Swipe up (negative dy) opens the metadata panel
+        if (this._swipeDir === 'v' && this._swipeTouchYLast !== undefined) {
+          var swipeUpDy = this._swipeTouchYLast - this._swipeY0;
+          if (swipeUpDy < -60) this.openMeta();
+        }
+        return;
+      }
       var self      = this;
       var dx        = this.swipeDx;
       var threshold = 60;
@@ -659,6 +680,93 @@ var App = {
       if (this.lbScale <= 1) this.closeLightbox();
     },
 
+    // ── Metadata panel ─────────────────────────────────────────────────────
+
+    openMeta: function() {
+      this.lbMetaShow = true;
+      if (!this.lbMeta && !this.lbMetaLoading) this.loadMeta();
+    },
+
+    closeMeta: function() {
+      this.lbMetaShow = false;
+    },
+
+    loadMeta: async function() {
+      if (!this.lbFile) return;
+      this.lbMetaLoading = true;
+      try {
+        var res  = await fetch(API + '/metadata?path=' + encodeURIComponent(this.lbFile.path));
+        var data = await res.json();
+        if (res.ok) this.lbMeta = data;
+      } catch (e) { /* silent — panel will stay empty */ }
+      this.lbMetaLoading = false;
+    },
+
+    setPinnedPreview: async function() {
+      if (!this.lbFile) return;
+      var self = this;
+      self.lbPinningPreview = true;
+      try {
+        var res  = await fetch(API + '/folder/preview', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ file_path: self.lbFile.path }),
+        });
+        var data = await res.json();
+        if (!res.ok || !data.ok) {
+          self.addSnack(data.error || 'Failed to set preview', 'error');
+        } else {
+          self.addSnack('Folder preview updated', 'success');
+          self.loadFolder();
+        }
+      } catch (e) {
+        self.addSnack('Network error: ' + e.message, 'error');
+      }
+      self.lbPinningPreview = false;
+    },
+
+    onMetaHandleTouchStart: function(e) {
+      this._metaHandleY0 = e.touches[0].clientY;
+    },
+
+    onMetaHandleTouchEnd: function(e) {
+      if (this._metaHandleY0 == null) return;
+      var dy = (e.changedTouches[0] ? e.changedTouches[0].clientY : 0) - this._metaHandleY0;
+      this._metaHandleY0 = null;
+      if (dy > 40) this.closeMeta();
+    },
+
+    // Metadata formatting helpers
+
+    fmtMetaDate: function(dt) {
+      if (!dt) return '';
+      var d = new Date(dt.replace(' ', 'T'));
+      if (isNaN(d)) return dt;
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+           + ' at ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    },
+
+    fmtFileSize: function(bytes) {
+      if (!bytes) return '';
+      if (bytes < 1024)       return bytes + ' B';
+      if (bytes < 1048576)    return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+      return (bytes / 1073741824).toFixed(2) + ' GB';
+    },
+
+    fmtShutter: function(s) {
+      if (!s) return '';
+      // Already a fraction like "1/500" — append "s" suffix
+      return s + ' s';
+    },
+
+    fmtCoord: function(lat, lng) {
+      if (lat == null || lng == null) return '';
+      var latDir = lat >= 0 ? 'N' : 'S';
+      var lngDir = lng >= 0 ? 'E' : 'W';
+      return Math.abs(lat).toFixed(5) + '° ' + latDir + ', ' + Math.abs(lng).toFixed(5) + '° ' + lngDir;
+    },
+
     // ── Thumbnail size ────────────────────────────────────────────────────
 
     setThumbSize: function(value) {
@@ -677,6 +785,7 @@ var App = {
     onKeydown: function(e) {
       if (e.key === 'Escape') {
         if (this.cacheModal.show && !this.cacheModal.busy) { this.closeCacheModal(); return; }
+        if (this.lbMetaShow) { this.closeMeta(); return; }
         if (this.lbFile) { this.closeLightbox(); return; }
       }
       if (!this.lbFile) return;
@@ -966,7 +1075,118 @@ var App = {
           <span>{{ fmtTime(duration) }}</span>
         </div>
 
-        <div class="lightbox-filename">{{ lbFile.name }}</div>
+        <div class="lightbox-footer">
+          <div class="lightbox-filename">{{ lbFile.name }}</div>
+          <button class="lb-info-btn" @click.stop="openMeta" title="File info">ⓘ</button>
+        </div>
+      </div>
+
+      <!-- ── Metadata panel ── -->
+      <div v-if="lbFile && lbMetaShow" class="lb-meta-panel" @click.self="closeMeta">
+        <div class="lb-meta-sheet" @click.stop>
+          <div class="lb-meta-handle"
+            @click="closeMeta"
+            @touchstart.stop="onMetaHandleTouchStart"
+            @touchend.stop="onMetaHandleTouchEnd"
+          ></div>
+          <div class="lb-meta-scroll">
+
+            <div v-if="lbMetaLoading" class="lb-meta-loading">Loading…</div>
+
+            <template v-else-if="lbMeta">
+
+              <!-- Date & Time -->
+              <div v-if="lbMeta.capture_datetime" class="lb-meta-section">
+                <div class="lb-meta-section-title">Date &amp; Time</div>
+                <div class="lb-meta-row">
+                  <span class="lb-meta-label">Captured</span>
+                  <span class="lb-meta-value">{{ fmtMetaDate(lbMeta.capture_datetime) }}</span>
+                </div>
+              </div>
+
+              <!-- Camera (photos) -->
+              <div v-if="lbMeta.camera_make || lbMeta.camera_model || lbMeta.aperture || lbMeta.iso || lbMeta.focal_length" class="lb-meta-section">
+                <div class="lb-meta-section-title">Camera</div>
+                <div v-if="lbMeta.camera_make || lbMeta.camera_model" class="lb-meta-row">
+                  <span class="lb-meta-label">Camera</span>
+                  <span class="lb-meta-value">{{ [lbMeta.camera_make, lbMeta.camera_model].filter(Boolean).join(' ') }}</span>
+                </div>
+                <div v-if="lbMeta.focal_length" class="lb-meta-row">
+                  <span class="lb-meta-label">Focal length</span>
+                  <span class="lb-meta-value">{{ lbMeta.focal_length }} mm</span>
+                </div>
+                <div v-if="lbMeta.aperture" class="lb-meta-row">
+                  <span class="lb-meta-label">Aperture</span>
+                  <span class="lb-meta-value">f/{{ lbMeta.aperture }}</span>
+                </div>
+                <div v-if="lbMeta.shutter_speed" class="lb-meta-row">
+                  <span class="lb-meta-label">Shutter speed</span>
+                  <span class="lb-meta-value">{{ fmtShutter(lbMeta.shutter_speed) }}</span>
+                </div>
+                <div v-if="lbMeta.iso" class="lb-meta-row">
+                  <span class="lb-meta-label">ISO</span>
+                  <span class="lb-meta-value">{{ lbMeta.iso }}</span>
+                </div>
+              </div>
+
+              <!-- Video details -->
+              <div v-if="lbMeta.codec || lbMeta.fps || lbMeta.duration" class="lb-meta-section">
+                <div class="lb-meta-section-title">Video</div>
+                <div v-if="lbMeta.codec" class="lb-meta-row">
+                  <span class="lb-meta-label">Codec</span>
+                  <span class="lb-meta-value">{{ lbMeta.codec }}</span>
+                </div>
+                <div v-if="lbMeta.fps" class="lb-meta-row">
+                  <span class="lb-meta-label">Frame rate</span>
+                  <span class="lb-meta-value">{{ lbMeta.fps }} fps</span>
+                </div>
+                <div v-if="lbMeta.duration" class="lb-meta-row">
+                  <span class="lb-meta-label">Duration</span>
+                  <span class="lb-meta-value">{{ fmtTime(lbMeta.duration) }}</span>
+                </div>
+              </div>
+
+              <!-- File info -->
+              <div class="lb-meta-section">
+                <div class="lb-meta-section-title">File</div>
+                <div class="lb-meta-row">
+                  <span class="lb-meta-label">Name</span>
+                  <span class="lb-meta-value lb-meta-break">{{ lbMeta.file_name || lbFile.name }}</span>
+                </div>
+                <div v-if="lbMeta.file_size" class="lb-meta-row">
+                  <span class="lb-meta-label">Size</span>
+                  <span class="lb-meta-value">{{ fmtFileSize(lbMeta.file_size) }}</span>
+                </div>
+                <div v-if="lbMeta.width && lbMeta.height" class="lb-meta-row">
+                  <span class="lb-meta-label">Dimensions</span>
+                  <span class="lb-meta-value">{{ lbMeta.width }} × {{ lbMeta.height }}</span>
+                </div>
+              </div>
+
+              <!-- Location -->
+              <div v-if="lbMeta.gps_lat != null" class="lb-meta-section">
+                <div class="lb-meta-section-title">Location</div>
+                <div class="lb-meta-row">
+                  <span class="lb-meta-label">Coordinates</span>
+                  <span class="lb-meta-value">{{ fmtCoord(lbMeta.gps_lat, lbMeta.gps_lng) }}</span>
+                </div>
+                <div v-if="lbMeta.gps_alt != null" class="lb-meta-row">
+                  <span class="lb-meta-label">Altitude</span>
+                  <span class="lb-meta-value">{{ lbMeta.gps_alt }} m</span>
+                </div>
+              </div>
+
+            </template>
+
+            <!-- Folder preview pin (photo and video only) -->
+            <div v-if="lbFile && (lbFile.type === 'photo' || lbFile.type === 'video')" class="lb-meta-preview-section">
+              <button class="lb-meta-preview-btn" :disabled="lbPinningPreview" @click="setPinnedPreview">
+                {{ lbPinningPreview ? 'Saving…' : 'Set as folder preview' }}
+              </button>
+            </div>
+
+          </div>
+        </div>
       </div>
 
       <!-- ── Cache modal ── -->

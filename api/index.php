@@ -461,6 +461,144 @@ function deleteCachePath(string $path, bool $keepRoot): int
     return $deleted;
 }
 
+// ── Metadata extraction ───────────────────────────────────────────────────────
+
+/** Convert a GPS rational array + ref to a signed decimal degree. */
+function gpsToDecimal(array $coord, string $ref): float
+{
+    $deg = 0.0;
+    foreach ($coord as $i => $part) {
+        $nums = explode('/', (string)$part);
+        $val  = (count($nums) === 2 && (float)$nums[1] > 0)
+            ? (float)$nums[0] / (float)$nums[1]
+            : (float)$part;
+        $deg += $val / (60 ** $i);
+    }
+    return in_array(strtoupper($ref), ['S', 'W'], true) ? -$deg : $deg;
+}
+
+/**
+ * Extract available metadata from a photo file.
+ * Always returns file_name and file_size; adds EXIF fields for JPEG.
+ */
+function extractPhotoMetadata(string $fullPath): array
+{
+    $meta = [
+        'file_name' => basename($fullPath),
+        'file_size' => @filesize($fullPath) ?: null,
+    ];
+
+    $info = @getimagesize($fullPath);
+    if ($info) { $meta['width'] = $info[0]; $meta['height'] = $info[1]; }
+
+    $ext = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg'], true) || !function_exists('exif_read_data')) {
+        return $meta;
+    }
+
+    $exif = @exif_read_data($fullPath, 'ANY_TAG', false);
+    if (!is_array($exif)) return $meta;
+
+    // Capture date
+    foreach (['DateTimeOriginal', 'DateTimeDigitized', 'DateTime'] as $key) {
+        $dt = $exif[$key] ?? null;
+        if ($dt) {
+            $obj = \DateTime::createFromFormat('Y:m:d H:i:s', $dt);
+            if ($obj !== false) { $meta['capture_datetime'] = $obj->format('Y-m-d H:i:s'); break; }
+        }
+    }
+
+    // Camera
+    if (!empty($exif['Make']))  $meta['camera_make']  = trim($exif['Make']);
+    if (!empty($exif['Model'])) $meta['camera_model'] = trim($exif['Model']);
+
+    // Aperture (FNumber stored as fraction string)
+    if (!empty($exif['FNumber'])) {
+        $p = explode('/', (string)$exif['FNumber']);
+        if (count($p) === 2 && (float)$p[1] > 0) $meta['aperture'] = round((float)$p[0] / (float)$p[1], 1);
+    }
+
+    // Shutter speed
+    if (!empty($exif['ExposureTime'])) $meta['shutter_speed'] = (string)$exif['ExposureTime'];
+
+    // ISO
+    if (!empty($exif['ISOSpeedRatings'])) {
+        $iso = $exif['ISOSpeedRatings'];
+        $meta['iso'] = is_array($iso) ? (int)$iso[0] : (int)$iso;
+    }
+
+    // Focal length
+    if (!empty($exif['FocalLength'])) {
+        $p = explode('/', (string)$exif['FocalLength']);
+        $meta['focal_length'] = (count($p) === 2 && (float)$p[1] > 0)
+            ? round((float)$p[0] / (float)$p[1])
+            : round((float)$exif['FocalLength']);
+    }
+
+    // GPS
+    if (!empty($exif['GPSLatitude']) && !empty($exif['GPSLongitude'])) {
+        $meta['gps_lat'] = round(gpsToDecimal($exif['GPSLatitude'],  $exif['GPSLatitudeRef']  ?? 'N'), 6);
+        $meta['gps_lng'] = round(gpsToDecimal($exif['GPSLongitude'], $exif['GPSLongitudeRef'] ?? 'E'), 6);
+        if (!empty($exif['GPSAltitude'])) {
+            $p = explode('/', (string)$exif['GPSAltitude']);
+            if (count($p) === 2 && (float)$p[1] > 0) $meta['gps_alt'] = round((float)$p[0] / (float)$p[1]);
+        }
+    }
+
+    return $meta;
+}
+
+/**
+ * Extract available metadata from a video file using FFprobe.
+ * Falls back to file_name + file_size if FFprobe is unavailable.
+ */
+function extractVideoMetadata(string $fullPath, array $config): array
+{
+    $meta = [
+        'file_name' => basename($fullPath),
+        'file_size' => @filesize($fullPath) ?: null,
+    ];
+
+    $ffprobe = dirname($config['ffmpeg_path']) . '/ffprobe';
+    if (!is_executable($ffprobe)) return $meta;
+
+    $cmd = escapeshellarg($ffprobe)
+         . ' -v quiet -print_format json -show_streams -show_format '
+         . escapeshellarg($fullPath) . ' 2>/dev/null';
+    $out = @shell_exec($cmd);
+    if (!$out) return $meta;
+
+    $data = json_decode($out, true);
+    if (!is_array($data)) return $meta;
+
+    $fmt = $data['format'] ?? [];
+    if (!empty($fmt['duration'])) $meta['duration'] = round((float)$fmt['duration']);
+
+    $creationTime = $fmt['tags']['creation_time'] ?? ($fmt['tags']['com.apple.quicktime.creationdate'] ?? '');
+    if ($creationTime) {
+        $obj = date_create($creationTime);
+        if ($obj) $meta['capture_datetime'] = $obj->format('Y-m-d H:i:s');
+    }
+
+    foreach ($data['streams'] ?? [] as $stream) {
+        if (($stream['codec_type'] ?? '') === 'video') {
+            if (!empty($stream['width']))      $meta['width']  = (int)$stream['width'];
+            if (!empty($stream['height']))     $meta['height'] = (int)$stream['height'];
+            if (!empty($stream['codec_name'])) $meta['codec']  = $stream['codec_name'];
+            if (!empty($stream['r_frame_rate'])) {
+                $p = explode('/', $stream['r_frame_rate']);
+                if (count($p) === 2 && (float)$p[1] > 0) {
+                    $fps = round((float)$p[0] / (float)$p[1], 1);
+                    if ($fps > 0) $meta['fps'] = $fps;
+                }
+            }
+            break;
+        }
+    }
+
+    return $meta;
+}
+
 // ── Slim app setup ────────────────────────────────────────────────────────────
 
 $app = AppFactory::create();
@@ -526,6 +664,17 @@ $app->get('/browse', function (Request $request, Response $response) use ($confi
         if (is_dir($fullPath)) {
             if (in_array($entry, $blacklistDirNames, true)) continue;
             if (in_array($relEntry, $blacklistDirPaths, true)) continue;
+
+            // Check for a permanently pinned preview image.
+            $subIdxPath = indexJsonPath($relEntry, $config);
+            $subIdx     = readIndex($subIdxPath);
+            if (!empty($subIdx['pinned_preview'])) {
+                $pinnedFull = resolvePath($subIdx['pinned_preview'], $mediaBase);
+                if ($pinnedFull !== false && is_file($pinnedFull)) {
+                    $folders[] = ['name' => $entry, 'path' => $relEntry, 'thumbnail' => $subIdx['pinned_preview'], '_mtime' => @filemtime($fullPath) ?: 0];
+                    continue;
+                }
+            }
 
             // First photo is preferred as the folder thumbnail; first video is the fallback.
             $folderThumb  = null;
@@ -688,11 +837,16 @@ $app->get('/thumbnail', function (Request $request, Response $response) use ($co
     if (!is_dir($cInfo['dir'])) @mkdir($cInfo['dir'], 0755, true);
     @file_put_contents($cInfo['fsPath'], $jpg);
 
+    $meta = ($type === 'photo')
+        ? extractPhotoMetadata($fullPath)
+        : extractVideoMetadata($fullPath, $config);
+
     updateIndexFile($indexPath, $fname, [
         'type'          => $type,
         'source_mtime'  => $srcMtime,
         'capture_date'  => getMediaCaptureDate($fullPath, $type),
         'thumbnail_url' => $cInfo['url'],
+        'meta'          => $meta,
     ], $config['cache_path']);
 
     return $response
@@ -875,11 +1029,16 @@ $app->post('/cache/build', function (Request $request, Response $response) use (
 
     // Update index (locked write so concurrent bulk-generation requests don't
     // overwrite each other's entries in the same _index.json).
+    $meta = ($type === 'photo')
+        ? extractPhotoMetadata($fullPath)
+        : extractVideoMetadata($fullPath, $config);
+
     updateIndexFile($indexPath, $fname, [
         'type'          => $type,
         'source_mtime'  => $srcMtime,
         'capture_date'  => getMediaCaptureDate($fullPath, $type),
         'thumbnail_url' => $cInfo['url'],
+        'meta'          => $meta,
     ], $config['cache_path']);
 
     $response->getBody()->write(json_encode(['ok' => true, 'skipped' => false, 'url' => $cInfo['url']]));
@@ -925,6 +1084,117 @@ $app->post('/cache/delete', function (Request $request, Response $response) use 
     }
 
     $response->getBody()->write(json_encode(['ok' => true, 'deleted' => $deleted]));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
+// ── Route: GET /metadata ──────────────────────────────────────────────────────
+//
+// Returns stored (or on-the-fly extracted) metadata for a single file.
+// Reads from the cache index when available; falls back to direct extraction.
+// Query params: path=relative/file.jpg
+
+$app->get('/metadata', function (Request $request, Response $response) use ($config): Response {
+    $params  = $request->getQueryParams();
+    $relPath = ltrim($params['path'] ?? '', '/');
+
+    if ($relPath === '') {
+        $response->getBody()->write(json_encode(['error' => 'Missing path']));
+        return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+    }
+
+    $mediaBase = rtrim($config['media_base_path'], '/\\');
+    $fullPath  = resolvePath($relPath, $mediaBase);
+
+    if ($fullPath === false || !is_file($fullPath)) {
+        $response->getBody()->write(json_encode(['error' => 'File not found']));
+        return $response->withStatus(404)->withHeader('Content-Type', 'application/json');
+    }
+
+    $fname     = basename($relPath);
+    $folderRel = dirname($relPath);
+    $indexPath = indexJsonPath($folderRel, $config);
+    $index     = readIndex($indexPath);
+    $cached    = $index['files'][$fname] ?? null;
+
+    // Return cached metadata when available.
+    if ($cached && !empty($cached['meta'])) {
+        $response->getBody()->write(json_encode($cached['meta']));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    // Extract on-the-fly if cache miss (thumbnail not yet generated).
+    $type = getMediaType($fname, $config['extensions']);
+    $meta = match($type) {
+        'photo' => extractPhotoMetadata($fullPath),
+        'video' => extractVideoMetadata($fullPath, $config),
+        default => ['file_name' => $fname, 'file_size' => @filesize($fullPath) ?: null],
+    };
+
+    $response->getBody()->write(json_encode($meta));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
+// ── Route: POST /folder/preview ───────────────────────────────────────────────
+//
+// Permanently pins a specific file as the preview thumbnail for its parent folder.
+// Body (JSON): { "file_path": "relative/path/to/file.jpg" }
+// Stored as 'pinned_preview' in the folder's _index.json.
+// Cleared by sending { "file_path": "" } or omitting the field.
+
+$app->post('/folder/preview', function (Request $request, Response $response) use ($config): Response {
+    $body    = json_decode((string) $request->getBody(), true) ?? [];
+    $relPath = ltrim($body['file_path'] ?? '', '/');
+
+    // Allow clearing the pin with an empty path.
+    if ($relPath !== '') {
+        $mediaBase = rtrim($config['media_base_path'], '/\\');
+        $fullPath  = resolvePath($relPath, $mediaBase);
+        if ($fullPath === false || !is_file($fullPath)) {
+            $response->getBody()->write(json_encode(['ok' => false, 'error' => 'File not found']));
+            return $response->withStatus(404)->withHeader('Content-Type', 'application/json');
+        }
+    }
+
+    // Derive the parent folder's index path.
+    $folderRel = $relPath !== '' ? ltrim(dirname($relPath), '.') : '';
+    $indexPath = indexJsonPath($folderRel, $config);
+
+    $dir = dirname($indexPath);
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+
+    $htaccess = rtrim($config['cache_path'], '/') . '/.htaccess';
+    if (!file_exists($htaccess)) @file_put_contents($htaccess, "Options -Indexes\n");
+
+    $fh = @fopen($indexPath, 'c+');
+    if ($fh === false) {
+        $response->getBody()->write(json_encode(['ok' => false, 'error' => 'Cannot open index']));
+        return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
+    }
+    if (!flock($fh, LOCK_EX)) { fclose($fh); return $response->withStatus(500); }
+
+    $content = stream_get_contents($fh);
+    $data    = json_decode($content ?: '', true);
+    if (!is_array($data)) {
+        $data = ['updated_at' => 0, 'files' => [], 'folders' => []];
+    } else {
+        $data = array_merge(['updated_at' => 0, 'files' => [], 'folders' => []], $data);
+    }
+
+    if ($relPath !== '') {
+        $data['pinned_preview'] = $relPath;
+    } else {
+        unset($data['pinned_preview']);
+    }
+    $data['updated_at'] = time();
+
+    rewind($fh);
+    ftruncate($fh, 0);
+    fwrite($fh, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+
+    $response->getBody()->write(json_encode(['ok' => true]));
     return $response->withHeader('Content-Type', 'application/json');
 });
 

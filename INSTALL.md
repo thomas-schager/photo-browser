@@ -209,13 +209,21 @@ Work through this checklist after uploading:
    Click an audio file.
    → Lightbox shows animated waveform and audio controls.
 
-7. **Page refresh preserves state**
+7. **Metadata panel**
+   Click a photo or video in the lightbox, then tap the **ⓘ** button (bottom right of the lightbox). On mobile you can also swipe up.
+   → A panel slides up showing date & time, camera details (JPEG), file info, and GPS if available.
+
+8. **Folder preview pin**
+   Open any photo in the lightbox → tap ⓘ → scroll to the bottom of the metadata panel → tap **Set as folder preview**.
+   → The folder tile in the grid now shows that photo as its cover.
+
+9. **Page refresh preserves state**
    Navigate to a folder, press F5.
    → The same folder reloads.
 
-8. **Direct lightbox URL**
-   Open a file, copy the URL, paste into a new tab.
-   → Folder loads and lightbox opens for that file.
+10. **Direct lightbox URL**
+    Open a file, copy the URL, paste into a new tab.
+    → Folder loads and lightbox opens for that file.
 
 ---
 
@@ -243,8 +251,14 @@ Work through this checklist after uploading:
 ### Video thumbnails always fail / show "FFmpeg not found"
 
 - In Package Center, confirm the `ffmpeg` package status is **Running**.
-- If the `X-Thumbnail-Error` header says "FFmpeg not found", the binary path may differ from the default. The expected path is `/var/packages/ffmpeg/target/bin/ffmpeg` — update `$config['ffmpeg_path']` in `api/index.php` if your installation differs.
+- If the `X-Thumbnail-Error` header says "FFmpeg not found", the binary path may differ from the default. The expected path is `/var/packages/ffmpeg/target/bin/ffmpeg` — update `ffmpeg_path` in `api/config.local.php` if your installation differs.
 - Check **DSM → Log Center → Application → Web Station** for `shell_exec` errors, which may indicate `shell_exec` is disabled in the PHP profile.
+
+### Metadata panel shows no camera / video details
+
+- **Photos**: EXIF metadata is only extracted from JPEG files. PNG, GIF, and WebP files show file name, size, and dimensions only.
+- **Videos**: Metadata is extracted using `ffprobe`, which ships alongside FFmpeg. If the FFmpeg package is not installed or the `ffmpeg_path` config key points to the wrong directory, video metadata will not be available (the panel will still show file name and size).
+- Metadata is stored in the thumbnail cache the first time a thumbnail is generated. If you generated thumbnails before this version was installed, use **Rebuild** in the cache modal to regenerate them with metadata.
 
 ### Permission denied errors
 

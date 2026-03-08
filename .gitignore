@@ -1,2 +1,5 @@
 .DS_Store
 *.log
+api/vendor/
+api/config.local.php
+.claude/
