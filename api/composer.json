@@ -1,0 +1,19 @@
+{
+    "name": "photo-browser/api",
+    "description": "Photo Browser PHP API",
+    "require": {
+        "php": ">=7.4",
+        "slim/slim": "^4.0",
+        "slim/psr7": "^1.0",
+        "php-di/php-di": "^6.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "config": {
+        "process-timeout": 0,
+        "optimize-autoloader": true
+    }
+}

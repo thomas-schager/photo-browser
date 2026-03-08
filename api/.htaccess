@@ -1,0 +1,7 @@
+RewriteEngine On
+RewriteBase /photos/api/
+
+# Route all requests that aren't real files through Slim's front controller
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [L,QSA]

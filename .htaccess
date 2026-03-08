@@ -1,0 +1,10 @@
+Options -Indexes
+RewriteEngine On
+RewriteBase /photos/
+
+# Pass real files and directories through unchanged
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# All /browse/* requests → SPA entry point
+RewriteRule ^browse(/.*)?$ index.php [L]
