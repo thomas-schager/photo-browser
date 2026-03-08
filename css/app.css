@@ -380,28 +380,10 @@ body {
 }
 .modal-input:focus { border-color: #4a9eff; }
 
-.modal-check {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  color: #ccc;
-  cursor: pointer;
-  min-height: 44px;
-}
-.modal-check input[type="checkbox"] { accent-color: #4a9eff; width: 20px; height: 20px; flex-shrink: 0; }
-
 .modal-hint {
   font-size: 12px;
   color: #555;
   margin: -8px 0 0;
-}
-
-.modal-desc {
-  font-size: 14px;
-  color: #888;
-  margin: 0;
-  line-height: 1.55;
 }
 
 .modal-label-note {
@@ -410,21 +392,60 @@ body {
   color: #555;
 }
 
-.modal-force-section {
-  border-top: 1px solid #2a2a2a;
-  padding-top: 14px;
+/* ── Cache option radio group ─────────────────────────────────── */
+.modal-options {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  border-top: 1px solid #2a2a2a;
+  padding-top: 12px;
 }
 
-.modal-force-hint {
+.modal-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.modal-option:hover { background: #252525; }
+.modal-option.selected { background: #1a2535; }
+
+.modal-option input[type="radio"] {
+  accent-color: #4a9eff;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.modal-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.modal-option-label {
+  font-size: 15px;
+  color: #bbb;
+  font-weight: 500;
+}
+.modal-option.selected .modal-option-label { color: #fff; }
+
+.modal-option-desc {
   font-size: 13px;
   color: #555;
-  margin: 0;
-  padding-left: 30px; /* align with checkbox label text (20px checkbox + 10px gap) */
-  line-height: 1.45;
+  line-height: 1.4;
 }
+.modal-option.selected .modal-option-desc { color: #777; }
+
+/* Delete option */
+.modal-option.delete-option.selected { background: #2a1a1a; }
+.modal-option.delete-option.selected .modal-option-label { color: #ff7070; }
+.modal-option.delete-option input[type="radio"] { accent-color: #ff6060; }
 
 .modal-actions {
   display: flex;
@@ -447,6 +468,8 @@ body {
 .modal-btn:hover { background: #333; border-color: #666; color: #fff; }
 .modal-btn.primary { background: #4a9eff; border-color: #4a9eff; color: #fff; }
 .modal-btn.primary:hover { background: #3a8eef; }
+.modal-btn.danger  { background: #8a2020; border-color: #8a2020; color: #fff; }
+.modal-btn.danger:hover  { background: #a02828; border-color: #a02828; }
 .modal-btn:disabled { opacity: .4; cursor: default; }
 
 .modal-progress-wrap { margin-top: 4px; }

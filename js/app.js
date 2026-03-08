@@ -122,12 +122,12 @@ var App = {
       snacks:    [],
       snackNext: 0,
 
-      // ── Cache generation modal ────────────────────────────────────────────
+      // ── Cache modal ───────────────────────────────────────────────────────
       cacheModal: {
         show:       false,
         folderPath: '',
         folderName: '',
-        force:      false,
+        action:     'refresh',   // 'refresh' | 'rebuild' | 'delete'
         pin:        '',
         busy:       false,
         done:       false,
@@ -410,10 +410,10 @@ var App = {
     // ── Cache generation ───────────────────────────────────────────────────
 
     openCacheModal: function(folder) {
-      var m       = this.cacheModal;
+      var m        = this.cacheModal;
       m.folderPath = folder.path;
       m.folderName = folder.name;
-      m.force      = false;
+      m.action     = 'refresh';
       m.pin        = '';
       m.busy       = false;
       m.done       = false;
@@ -427,11 +427,37 @@ var App = {
       if (!this.cacheModal.busy) this.cacheModal.show = false;
     },
 
-    startCacheGeneration: async function() {
+    startCacheAction: async function() {
       var self  = this;
       var modal = self.cacheModal;
       if (!modal.pin) return;
 
+      // ── Option 3: Delete ──────────────────────────────────────────────────
+      if (modal.action === 'delete') {
+        modal.busy = true;
+        modal.done = false;
+        try {
+          var delRes = await fetch(API + '/cache/delete', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ path: modal.folderPath, pin: modal.pin }),
+          });
+          var delData = await delRes.json();
+          if (delRes.status === 401) { self.addSnack('Wrong PIN', 'error'); modal.busy = false; return; }
+          if (!delRes.ok || !delData.ok) { self.addSnack(delData.error || 'Failed to delete cache', 'error'); modal.busy = false; return; }
+        } catch (e) {
+          self.addSnack('Network error: ' + e.message, 'error');
+          modal.busy = false;
+          return;
+        }
+        modal.done = true;
+        modal.busy = false;
+        self.addSnack('Cache cleared', 'success', 5000);
+        setTimeout(function() { self.closeCacheModal(); }, 1800);
+        return;
+      }
+
+      // ── Options 1 & 2: Refresh / Rebuild ─────────────────────────────────
       modal.busy       = true;
       modal.done       = false;
       modal.progress   = 0;
@@ -453,18 +479,11 @@ var App = {
 
       var listData = await listRes.json();
 
-      if (listRes.status === 401) {
-        self.addSnack('Wrong PIN', 'error');
-        modal.busy = false;
-        return;
-      }
-      if (!listRes.ok) {
-        self.addSnack(listData.error || 'Failed to retrieve file list', 'error');
-        modal.busy = false;
-        return;
-      }
+      if (listRes.status === 401) { self.addSnack('Wrong PIN', 'error'); modal.busy = false; return; }
+      if (!listRes.ok) { self.addSnack(listData.error || 'Failed to retrieve file list', 'error'); modal.busy = false; return; }
 
       var files   = listData.files || [];
+      var force   = (modal.action === 'rebuild');
       modal.total = files.length;
 
       // 2. Process files one at a time.
@@ -474,17 +493,11 @@ var App = {
           var buildRes = await fetch(API + '/cache/build', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ path: files[i].path, force: modal.force, pin: modal.pin }),
+            body:    JSON.stringify({ path: files[i].path, force: force, pin: modal.pin }),
           });
           var buildData = await buildRes.json();
-          if (buildRes.status === 401) {
-            self.addSnack('Wrong PIN', 'error');
-            modal.busy = false;
-            return;
-          }
-          if (!buildRes.ok || !buildData.ok) {
-            modal.errorCount++;
-          }
+          if (buildRes.status === 401) { self.addSnack('Wrong PIN', 'error'); modal.busy = false; return; }
+          if (!buildRes.ok || !buildData.ok) modal.errorCount++;
         } catch (e) {
           modal.errorCount++;
         }
@@ -669,7 +682,7 @@ var App = {
       if (!this.lbFile) return;
       if (e.key === 'ArrowLeft')  { this.prevFile(); return; }
       if (e.key === 'ArrowRight') { this.nextFile(); return; }
-      if (e.key === ' ' && (this.lbFile.type === 'video' || this.lbFile.type === 'audio')) {
+      if (e.key === ' ' && (this.lbFile && (this.lbFile.type === 'video' || this.lbFile.type === 'audio'))) {
         e.preventDefault();
         this.togglePlay();
       }
@@ -956,19 +969,41 @@ var App = {
         <div class="lightbox-filename">{{ lbFile.name }}</div>
       </div>
 
-      <!-- ── Cache generation modal ── -->
+      <!-- ── Cache modal ── -->
       <div
         v-if="cacheModal.show"
         class="modal-overlay"
         @click.self="closeCacheModal()"
       >
         <div class="modal-box">
-          <h3 class="modal-title">Generate thumbnails</h3>
+          <h3 class="modal-title">Thumbnails</h3>
           <p class="modal-subtitle">{{ cacheModal.folderName }}</p>
 
           <!-- Form (idle) -->
           <template v-if="!cacheModal.busy && !cacheModal.done">
-            <p class="modal-desc">Scans this folder and its subfolders for photos and videos, and creates thumbnails for any files that don't have one yet. Existing thumbnails are left unchanged.</p>
+            <div class="modal-options">
+              <label class="modal-option" :class="{ selected: cacheModal.action === 'refresh' }">
+                <input type="radio" name="cache-action" value="refresh" v-model="cacheModal.action">
+                <div class="modal-option-text">
+                  <span class="modal-option-label">Refresh</span>
+                  <span class="modal-option-desc">Add missing thumbnails and update changed files. Existing thumbnails are left unchanged.</span>
+                </div>
+              </label>
+              <label class="modal-option" :class="{ selected: cacheModal.action === 'rebuild' }">
+                <input type="radio" name="cache-action" value="rebuild" v-model="cacheModal.action">
+                <div class="modal-option-text">
+                  <span class="modal-option-label">Rebuild</span>
+                  <span class="modal-option-desc">Regenerate all thumbnails. Use this if thumbnails look outdated or incorrect.</span>
+                </div>
+              </label>
+              <label class="modal-option delete-option" :class="{ selected: cacheModal.action === 'delete' }">
+                <input type="radio" name="cache-action" value="delete" v-model="cacheModal.action">
+                <div class="modal-option-text">
+                  <span class="modal-option-label">Delete cache</span>
+                  <span class="modal-option-desc">Remove all cached thumbnails without regenerating.</span>
+                </div>
+              </label>
+            </div>
             <label class="modal-field">
               <span class="modal-label">PIN <span class="modal-label-note">(required for security)</span></span>
               <input
@@ -976,43 +1011,44 @@ var App = {
                 v-model="cacheModal.pin"
                 class="modal-input"
                 placeholder="Enter PIN"
-                @keyup.enter="startCacheGeneration"
+                @keyup.enter="startCacheAction"
                 autofocus
               >
             </label>
-            <div class="modal-force-section">
-              <label class="modal-check">
-                <input type="checkbox" v-model="cacheModal.force">
-                <span>Force regeneration of all files</span>
-              </label>
-              <p class="modal-force-hint">Unchecked: only missing or changed files are processed.</p>
-              <p class="modal-force-hint">Replaces all existing thumbnails with freshly generated ones. Use this if thumbnails appear outdated or incorrect.</p>
-            </div>
             <div class="modal-actions">
               <button class="modal-btn" @click="closeCacheModal()">Cancel</button>
-              <button class="modal-btn primary" @click="startCacheGeneration" :disabled="!cacheModal.pin">Start</button>
+              <button
+                class="modal-btn"
+                :class="cacheModal.action === 'delete' ? 'danger' : 'primary'"
+                @click="startCacheAction"
+                :disabled="!cacheModal.pin"
+              >{{ cacheModal.action === 'delete' ? 'Delete' : 'Start' }}</button>
             </div>
           </template>
 
           <!-- Progress (busy) -->
           <template v-if="cacheModal.busy">
-            <div class="modal-progress-wrap">
-              <div class="modal-progress-bar">
-                <div
-                  class="modal-progress-fill"
-                  :style="{ width: (cacheModal.total ? (cacheModal.progress / cacheModal.total * 100) : 0) + '%' }"
-                ></div>
+            <template v-if="cacheModal.action !== 'delete'">
+              <div class="modal-progress-wrap">
+                <div class="modal-progress-bar">
+                  <div
+                    class="modal-progress-fill"
+                    :style="{ width: (cacheModal.total ? (cacheModal.progress / cacheModal.total * 100) : 0) + '%' }"
+                  ></div>
+                </div>
               </div>
-            </div>
-            <p class="modal-progress-text">
-              {{ cacheModal.progress }} / {{ cacheModal.total }}
-              <span v-if="cacheModal.errorCount > 0" class="modal-error-count">{{ cacheModal.errorCount }} failed</span>
-            </p>
+              <p class="modal-progress-text">
+                {{ cacheModal.progress }} / {{ cacheModal.total }}
+                <span v-if="cacheModal.errorCount > 0" class="modal-error-count">{{ cacheModal.errorCount }} failed</span>
+              </p>
+            </template>
+            <p v-else class="modal-progress-text">Deleting…</p>
           </template>
 
           <!-- Done -->
           <template v-if="cacheModal.done">
-            <p class="modal-done">
+            <p class="modal-done" v-if="cacheModal.action === 'delete'">Cache cleared.</p>
+            <p class="modal-done" v-else>
               Done — {{ cacheModal.total - cacheModal.errorCount }} generated
               <span v-if="cacheModal.errorCount > 0">, {{ cacheModal.errorCount }} failed</span>.
             </p>

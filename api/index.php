@@ -434,6 +434,33 @@ function collectFilesRecursively(string $dir, string $relBase, array $config, ar
     }
 }
 
+/**
+ * Recursively delete cached files inside $path.
+ * When $keepRoot is true the directory itself and its .htaccess are preserved.
+ * Returns the number of files deleted.
+ */
+function deleteCachePath(string $path, bool $keepRoot): int
+{
+    if (!is_dir($path)) return 0;
+    $deleted = 0;
+    $entries = @scandir($path);
+    if ($entries === false) return 0;
+
+    foreach ($entries as $entry) {
+        if ($entry === '.' || $entry === '..') continue;
+        if ($keepRoot && $entry === '.htaccess') continue;
+
+        $full = $path . '/' . $entry;
+        if (is_dir($full)) {
+            $deleted += deleteCachePath($full, false);
+            @rmdir($full);
+        } elseif (is_file($full)) {
+            if (@unlink($full)) $deleted++;
+        }
+    }
+    return $deleted;
+}
+
 // ── Slim app setup ────────────────────────────────────────────────────────────
 
 $app = AppFactory::create();
@@ -857,6 +884,48 @@ $app->post('/cache/build', function (Request $request, Response $response) use (
 
     $response->getBody()->write(json_encode(['ok' => true, 'skipped' => false, 'url' => $cInfo['url']]));
     return $json([]);
+});
+
+// ── Route: POST /cache/delete ─────────────────────────────────────────────────
+//
+// Deletes all cached thumbnail files for a given folder path (recursively)
+// without regenerating them.
+// Body (JSON): { "pin": "…", "path": "relative/folder" }
+// On success:  { "ok": true, "deleted": N }
+// On failure:  { "ok": false, "error": "…" }
+// PIN-protected.
+
+$app->post('/cache/delete', function (Request $request, Response $response) use ($config): Response {
+    $body = json_decode((string) $request->getBody(), true) ?? [];
+
+    if (($body['pin'] ?? '') !== $config['cache_pin']) {
+        $response->getBody()->write(json_encode(['ok' => false, 'error' => 'Invalid PIN']));
+        return $response->withStatus(401)->withHeader('Content-Type', 'application/json');
+    }
+
+    $relPath   = ltrim($body['path'] ?? '', '/');
+    $cacheRoot = rtrim($config['cache_path'], '/');
+
+    if ($relPath === '' || $relPath === '.') {
+        $deleted = deleteCachePath($cacheRoot, true);
+    } else {
+        $parts     = explode('/', $relPath);
+        $sanitized = implode('/', array_filter(array_map('sanitizeName', $parts), fn($d) => $d !== ''));
+        $cacheDir  = $cacheRoot . '/' . $sanitized;
+
+        // Safety: ensure the resolved path is within the cache root.
+        $resolved = realpath($cacheDir) ?: $cacheDir;
+        if (!str_starts_with($resolved . '/', $cacheRoot . '/')) {
+            $response->getBody()->write(json_encode(['ok' => false, 'error' => 'Invalid path']));
+            return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+        }
+
+        $deleted = deleteCachePath($cacheDir, false);
+        if (is_dir($cacheDir)) @rmdir($cacheDir);
+    }
+
+    $response->getBody()->write(json_encode(['ok' => true, 'deleted' => $deleted]));
+    return $response->withHeader('Content-Type', 'application/json');
 });
 
 // ── Route: POST /sort ─────────────────────────────────────────────────────────

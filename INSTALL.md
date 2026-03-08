@@ -116,7 +116,7 @@ return [
 
 **`extensions`** — Add or remove file extensions as needed.
 
-**`cache_pin`** — PIN required to trigger bulk thumbnail generation from the browser. Leave empty to disable the feature.
+**`cache_pin`** — PIN required to use the cache management options in the browser (refresh, rebuild, or delete thumbnails). Leave empty to disable cache management.
 
 ---
 

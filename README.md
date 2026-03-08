@@ -8,7 +8,7 @@ A self-hosted photo and video browser for **Synology DiskStation NAS** (DSM 7.x)
 - Lightbox for photos (keyboard navigation, arrow keys / Escape)
 - Video playback with auto-play and Space bar toggle
 - Audio playback with waveform display
-- Thumbnail cache with optional bulk pre-generation (PIN-protected)
+- Thumbnail cache with three PIN-protected management options: refresh, rebuild, and delete
 - Per-folder sort order (by date or name, ascending/descending) — persisted per folder
 - EXIF-aware date sorting (reads `DateTimeOriginal` from JPEG files)
 - Handles EXIF orientation for correctly rotated thumbnails
@@ -108,7 +108,7 @@ All options and their defaults are documented in [api/config.default.php](api/co
 | `thumb_max_height` | `800` | Maximum thumbnail height in pixels. |
 | `cache_path` | `../cache` | Filesystem path for the thumbnail cache. Must be writable by the web server. |
 | `cache_url` | `/photos/cache` | Public URL prefix for the cache directory. |
-| `cache_pin` | `999` | PIN to authorise bulk thumbnail generation. Set a strong value in `config.local.php`. |
+| `cache_pin` | `999` | PIN to authorise cache management (refresh, rebuild, delete). Set a strong value in `config.local.php`. |
 | `blacklist_dir_names` | `['@eaDir', '@Recycle', '#recycle']` | Directory names to hide everywhere. |
 | `blacklist_dir_paths` | `[]` | Specific directory paths to hide (relative to `media_base_path`). |
 | `blacklist_file_paths` | `[]` | Specific file paths to hide (relative to `media_base_path`). |
