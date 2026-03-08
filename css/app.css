@@ -611,15 +611,16 @@ body {
 }
 
 .lightbox-img {
-  max-width: 90vw;
-  max-height: 80vh;
+  width: 90vw;
+  height: 80vh;
   object-fit: contain;
   border-radius: 4px;
 }
 
 .lightbox-video {
-  max-width: 90vw;
-  max-height: 80vh;
+  width: 90vw;
+  height: 80vh;
+  object-fit: contain;
   border-radius: 4px;
   background: #000;
 }
