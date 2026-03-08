@@ -83,38 +83,40 @@ composer install --no-dev --optimize-autoloader
 
 This creates `api/vendor/` containing Slim Framework 4 and all dependencies.
 
-### 2.3 Edit the configuration
+### 2.3 Configure
 
-Open [api/index.php](api/index.php) and adjust the `$config` array at the top if needed:
+Copy the default configuration and override only the values that differ:
+
+```bash
+cp api/config.default.php api/config.local.php
+```
+
+Then edit `api/config.local.php`. A minimal setup for Synology looks like this:
 
 ```php
-$config = [
+return [
     // Absolute path to your photo library root on the NAS
-    'media_base_path'  => '/volume1/Gemeinsame Dateien/Gemeinsame Dateien/Fotos',
+    'media_base_path' => '/volume1/photo',
 
-    // Path to the ffmpeg binary (default after SynoCommunity install)
-    'ffmpeg_path'      => '/var/packages/ffmpeg/target/bin/ffmpeg',
+    // Full path to the ffmpeg binary (default after SynoCommunity install)
+    'ffmpeg_path' => '/var/packages/ffmpeg/target/bin/ffmpeg',
 
-    // Thumbnail max dimensions in px; aspect ratio is always preserved
-    'thumb_max_width'  => 800,
-    'thumb_max_height' => 800,
-
-    // File extensions to recognise, grouped by type
-    'extensions' => [
-        'photo' => ['jpg', 'jpeg', 'png', 'gif', 'webp'],
-        'video' => ['mp4', 'mov', 'avi', 'mkv'],
-        'audio' => ['mp3', 'wav', 'flac'],
-    ],
+    // PIN to protect the bulk thumbnail generation endpoint
+    'cache_pin' => 'your-pin-here',
 ];
 ```
 
+`api/config.local.php` is gitignored and will never be committed to the repository. All available options and their defaults are documented in [api/config.default.php](api/config.default.php).
+
 **`media_base_path`** — Root of the photo library. The app prevents navigating above this path.
 
-**`ffmpeg_path`** — Only change this if FFmpeg was installed somewhere other than the SynoCommunity default.
+**`ffmpeg_path`** — Only change this if FFmpeg was installed somewhere other than the SynoCommunity default (`/var/packages/ffmpeg/target/bin/ffmpeg`).
 
-**`thumb_max_width` / `thumb_max_height`** — Maximum thumbnail dimensions; width and height can be set independently.
+**`thumb_max_width` / `thumb_max_height`** — Maximum thumbnail dimensions in pixels; width and height can be set independently.
 
-**`extensions`** — Add or remove extensions as needed.
+**`extensions`** — Add or remove file extensions as needed.
+
+**`cache_pin`** — PIN required to trigger bulk thumbnail generation from the browser. Leave empty to disable the feature.
 
 ---
 
@@ -124,18 +126,19 @@ $config = [
 
 ```
 /volume1/web/photos/
-├── index.html
+├── index.php            ← SPA entry point
 ├── .htaccess
+├── favicon.svg
 ├── css/
 │   └── app.css
 ├── js/
 │   └── app.js
-├── api/
-│   ├── index.php
-│   ├── composer.json
-│   └── vendor/          ← built in step 2, upload this folder
-└── assets/
-    └── icons/
+└── api/
+    ├── index.php
+    ├── config.default.php
+    ├── config.local.php ← your local config (not in the repository)
+    ├── composer.json
+    └── vendor/          ← built in step 2, upload this folder
 ```
 
 ### 3.2 Create the destination folder
@@ -146,31 +149,21 @@ Open **File Station** in DSM and navigate to `volume1/web/`. Create a new folder
 
 In File Station, open `volume1/web/photos/` and drag-and-drop the following from your local project folder:
 
-- `index.html`
+- `index.php`
 - `.htaccess`
+- `favicon.svg`
 - `css/` folder
 - `js/` folder
-- `api/` folder (including the `vendor/` subdirectory built in step 2)
-- `assets/` folder
+- `api/` folder (including `config.local.php` and the `vendor/` subdirectory built in step 2)
 
-### 3.4 Create the .htaccess file
+### 3.4 .htaccess files
 
-Create a file named `.htaccess` in your local project root (next to `index.html`) with this content, then upload it to `volume1/web/photos/`:
+Both `.htaccess` files are already included in the repository and uploaded as part of step 3.3:
 
-```apache
-Options -Indexes
-RewriteEngine On
+- **`/volume1/web/photos/.htaccess`** — routes `/browse/…` requests to `index.php` for SPA navigation.
+- **`/volume1/web/photos/api/.htaccess`** — routes all non-file requests through Slim's front controller.
 
-# Pass real files and directories through unchanged
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-
-# API requests are handled by Slim — do not rewrite
-RewriteRule ^api/ - [L]
-
-# All /browse/* requests → SPA entry point
-RewriteRule ^browse(/.*)?$ /photos/index.html [L]
-```
+No manual editing is required unless you change the base URL from `/photos`.
 
 ---
 
@@ -231,7 +224,7 @@ Work through this checklist after uploading:
 ### Blank page at `/photos/browse/`
 
 - Open browser DevTools → Console and check for JavaScript errors.
-- Confirm static files are reachable: open `https://192.168.0.20/photos/index.html` directly.
+- Confirm static files are reachable: open `https://<NAS-IP>/photos/index.php` directly.
 - Confirm the Web Service Portal is using **Apache HTTP Server 2.4** (see step 1.3) — Nginx does not process `.htaccess` files.
 - Confirm `.htaccess` was uploaded to `volume1/web/photos/`.
 
