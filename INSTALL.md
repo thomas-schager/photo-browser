@@ -1,7 +1,7 @@
 # Photo Browser — Installation Guide (Synology DSM 7.x)
 
 Target: Synology DiskStation DS214+ · DSM 7.1.1
-Base URL after installation: `https://192.168.0.20/photos`
+Base URL after installation: `https://<NAS-IP>/photos`
 
 All steps are performed either on your **local Mac** or through the **DSM web interface / File Station**. No SSH required.
 
@@ -186,7 +186,7 @@ If you see **permission denied** errors for the photo library:
 Work through this checklist after uploading:
 
 1. **Root folder loads**
-   Open `https://192.168.0.20/photos/browse/` in a browser.
+   Open `https://<NAS-IP>/photos/browse/` in a browser.
    → You should see folder tiles for the top-level directories.
 
 2. **Folder navigation**
@@ -240,7 +240,7 @@ Work through this checklist after uploading:
 ### API returns 404 for `/photos/api/browse`
 
 - In File Station, confirm `volume1/web/photos/api/vendor/autoload.php` exists. If not, re-run `composer install` locally and re-upload `api/vendor/`.
-- Open `https://192.168.0.20/photos/api/browse?path=` directly in a browser — you should get a JSON response.
+- Open `https://<NAS-IP>/photos/api/browse?path=` directly in a browser — you should get a JSON response.
 - Check **DSM → Log Center → Application → Web Station** for PHP errors.
 
 ### Thumbnails not loading (broken image icons)
