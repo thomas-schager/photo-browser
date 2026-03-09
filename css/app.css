@@ -567,12 +567,36 @@ body {
   inset: 0;
   background: rgba(0,0,0,.92);
   z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
   touch-action: none; /* JS handles all touch gestures — prevents browser pinch-zoom */
+}
+
+/* Image page: absolutely fills the overlay on desktop; scroll-snap page on mobile */
+.lb-image-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile metadata inline page — hidden on desktop */
+.lb-meta-mobile { display: none; }
+
+.lb-meta-mobile-handle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 0 6px;
+}
+.lb-meta-mobile-handle::before {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
 }
 
 .lightbox-close {
@@ -788,6 +812,48 @@ body {
   .cert-retry-btn   { padding: 12px 20px; font-size: 16px; width: 100%; }
 }
 
+/* ── Mobile lightbox: scroll-snap vertical pages ────────────── */
+@media (max-width: 639px) {
+  .lightbox-overlay {
+    display: flex;
+    flex-direction: column;
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    overscroll-behavior: contain;
+    touch-action: pan-y; /* browser handles vertical scroll; JS handles horizontal swipe */
+  }
+
+  /* On mobile, image page leaves the absolute flow and becomes a scroll-snap page */
+  .lb-image-page {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh; /* dynamic viewport height (accounts for browser toolbar) */
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  .lb-meta-mobile {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    flex-shrink: 0;
+    background: #1a1a1a;
+    border-top: 1px solid #2e2e2e;
+    scroll-snap-align: start;
+    overflow: hidden; /* inner lb-meta-scroll handles its own overflow */
+  }
+
+  /* ⓘ button is replaced by scrolling on mobile */
+  .lb-info-btn { display: none; }
+
+  /* Desktop bottom-sheet panel is not used on mobile */
+  .lb-meta-panel { display: none !important; }
+}
+
 /* ── Metadata panel ─────────────────────────────────────────── */
 .lb-meta-panel {
   position: fixed;
@@ -902,6 +968,18 @@ body {
 }
 .lb-meta-preview-btn:hover:not(:disabled) { color: #fff; border-color: #888; }
 .lb-meta-preview-btn:disabled { opacity: .4; cursor: default; }
+
+.lb-meta-preview-current {
+  font-size: 13px;
+  color: #4aff9e;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lb-meta-preview-current::before {
+  content: '✓';
+  font-size: 12px;
+}
 
 /* On larger viewports, cap the sheet width and center it */
 @media (min-width: 640px) {

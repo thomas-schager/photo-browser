@@ -748,10 +748,11 @@ $app->get('/browse', function (Request $request, Response $response) use ($confi
     unset($f);
 
     $response->getBody()->write(json_encode([
-        'folders'  => $folders,
-        'files'    => $files,
-        'sort'     => $sort,
-        'warnings' => $warnings,
+        'folders'        => $folders,
+        'files'          => $files,
+        'sort'           => $sort,
+        'pinned_preview' => $index['pinned_preview'] ?? null,
+        'warnings'       => $warnings,
     ]));
     return $response->withHeader('Content-Type', 'application/json');
 });

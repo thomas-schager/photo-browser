@@ -210,12 +210,13 @@ Work through this checklist after uploading:
    → Lightbox shows animated waveform and audio controls.
 
 7. **Metadata panel**
-   Click a photo or video in the lightbox, then tap the **ⓘ** button (bottom right of the lightbox). On mobile you can also swipe up.
-   → A panel slides up showing date & time, camera details (JPEG), file info, and GPS if available.
+   Click a photo or video in the lightbox, then tap the **ⓘ** button (desktop, bottom right of the lightbox) or scroll down past the image (mobile).
+   → A panel shows date & time, camera details (JPEG), file info, and GPS if available.
 
 8. **Folder preview pin**
-   Open any photo in the lightbox → tap ⓘ → scroll to the bottom of the metadata panel → tap **Set as folder preview**.
+   Open any photo that is not already the folder preview → tap ⓘ → scroll to the bottom of the metadata panel → tap **Set as folder preview**.
    → The folder tile in the grid now shows that photo as its cover.
+   → If the file is already the folder preview (pinned or auto-selected as the first alphabetical photo), the button is replaced by a **Folder preview** label.
 
 9. **Page refresh preserves state**
    Navigate to a folder, press F5.
