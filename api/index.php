@@ -666,38 +666,60 @@ $app->get('/browse', function (Request $request, Response $response) use ($confi
             if (in_array($relEntry, $blacklistDirPaths, true)) continue;
 
             // Check for a permanently pinned preview image.
-            $subIdxPath = indexJsonPath($relEntry, $config);
-            $subIdx     = readIndex($subIdxPath);
+            $subIdxPath  = indexJsonPath($relEntry, $config);
+            $subIdx      = readIndex($subIdxPath);
+            $folderMtime = @filemtime($fullPath) ?: 0;
             if (!empty($subIdx['pinned_preview'])) {
                 $pinnedFull = resolvePath($subIdx['pinned_preview'], $mediaBase);
                 if ($pinnedFull !== false && is_file($pinnedFull)) {
-                    $folders[] = ['name' => $entry, 'path' => $relEntry, 'thumbnail' => $subIdx['pinned_preview'], '_mtime' => @filemtime($fullPath) ?: 0];
+                    $folders[] = ['name' => $entry, 'path' => $relEntry, 'thumbnail' => $subIdx['pinned_preview'], '_mtime' => $folderMtime];
                     continue;
                 }
             }
 
-            // First photo is preferred as the folder thumbnail; first video is the fallback.
-            $folderThumb  = null;
-            $folderVideo  = null;
-            $subEntries   = @scandir($fullPath);
-            if ($subEntries) {
-                sort($subEntries);
-                foreach ($subEntries as $sub) {
-                    if ($sub === '.' || $sub === '..') continue;
-                    if (!is_file($fullPath . DIRECTORY_SEPARATOR . $sub)) continue;
-                    $subType = getMediaType($sub, $config['extensions']);
-                    if ($subType === 'photo') {
-                        $folderThumb = $relEntry . '/' . $sub;
-                        break;
-                    }
-                    if ($subType === 'video' && $folderVideo === null) {
-                        $folderVideo = $relEntry . '/' . $sub;
+            // Cache hit: use stored auto_preview if the folder mtime is unchanged.
+            $cacheHit = array_key_exists('auto_preview_mtime', $subIdx)
+                     && $subIdx['auto_preview_mtime'] === $folderMtime;
+            if ($cacheHit) {
+                $folderThumb = $subIdx['auto_preview'] ?? null;
+                // Verify the cached file still exists (guards against renames/deletes).
+                if ($folderThumb !== null) {
+                    $thumbFull = resolvePath($folderThumb, $mediaBase);
+                    if ($thumbFull === false || !is_file($thumbFull)) {
+                        $cacheHit = false; // stale — fall through to rescan
                     }
                 }
             }
-            if ($folderThumb === null) $folderThumb = $folderVideo;
 
-            $folders[] = ['name' => $entry, 'path' => $relEntry, 'thumbnail' => $folderThumb, '_mtime' => @filemtime($fullPath) ?: 0];
+            if (!$cacheHit) {
+                // Cache miss: scan the subfolder to find the first photo or video.
+                $folderThumb = null;
+                $folderVideo = null;
+                $subEntries  = @scandir($fullPath);
+                if ($subEntries) {
+                    sort($subEntries);
+                    foreach ($subEntries as $sub) {
+                        if ($sub === '.' || $sub === '..') continue;
+                        if (!is_file($fullPath . DIRECTORY_SEPARATOR . $sub)) continue;
+                        $subType = getMediaType($sub, $config['extensions']);
+                        if ($subType === 'photo') {
+                            $folderThumb = $relEntry . '/' . $sub;
+                            break;
+                        }
+                        if ($subType === 'video' && $folderVideo === null) {
+                            $folderVideo = $relEntry . '/' . $sub;
+                        }
+                    }
+                }
+                if ($folderThumb === null) $folderThumb = $folderVideo;
+
+                // Persist the result so the next request skips the scan.
+                $subIdx['auto_preview']       = $folderThumb;
+                $subIdx['auto_preview_mtime'] = $folderMtime;
+                writeIndex($subIdxPath, $subIdx, $config['cache_path']);
+            }
+
+            $folders[] = ['name' => $entry, 'path' => $relEntry, 'thumbnail' => $folderThumb, '_mtime' => $folderMtime];
             continue;
         }
 
