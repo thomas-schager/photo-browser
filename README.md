@@ -1,5 +1,7 @@
 # Photo Browser
 
+![Photo Browser](docs/example-screen.png)
+
 A self-hosted photo and video browser for **Synology DiskStation NAS** (DSM 7.x). Browse your photo library through a clean web UI — no cloud, no indexing daemon, no database.
 
 ## Features
@@ -120,7 +122,7 @@ All options and their defaults are documented in [api/config.default.php](api/co
 
 ## Full Installation Guide
 
-For a detailed step-by-step guide covering Web Station setup, PHP configuration, FFmpeg installation, permissions, and troubleshooting, see [INSTALL.md](INSTALL.md).
+For a detailed step-by-step guide covering Web Station setup, PHP configuration, FFmpeg installation, permissions, and troubleshooting, see [INSTALL.md](docs/INSTALL.md).
 
 ## Requirements
 
